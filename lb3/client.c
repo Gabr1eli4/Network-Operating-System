@@ -16,6 +16,14 @@ struct Package {
 
 pthread_t thread;
 
+void *receiveMessages() {
+  while (1) {
+    char buffer[256];
+    int result = recv(clientSocket, buffer, sizeof(buffer), 0);
+    printf("%s", buffer);
+  }
+}
+
 int main(int argc, char *argv[]) {
   setbuf(stdout, NULL);
   clientSocket = socket(AF_INET, SOCK_STREAM, 0);
@@ -24,9 +32,9 @@ int main(int argc, char *argv[]) {
     return -1;
   }
 
-  for_addr.sin_addr.s_addr = inet_addr("192.168.1.71");
+  for_addr.sin_addr.s_addr = inet_addr("192.168.26.239");
   for_addr.sin_family = AF_INET;
-  for_addr.sin_port = htons(5556);
+  for_addr.sin_port = htons(5558);
 
   int connectionResult =
       connect(clientSocket, (struct sockaddr *)&for_addr, sizeof(for_addr));
@@ -43,9 +51,10 @@ int main(int argc, char *argv[]) {
     int w, m, parsed;
     struct Package package;
 
+    pthread_create(&thread, NULL, receiveMessages, NULL);
+
     parsed = sscanf(buffer, "w %d m %d", &w, &m);
     if (parsed == 2) {
-      printf("1");
       package.count = w;
       package.gender = 1;
       send(clientSocket, &package, sizeof(struct Package), 0);
@@ -58,7 +67,6 @@ int main(int argc, char *argv[]) {
 
     parsed = sscanf(buffer, "m %d w %d", &m, &w);
     if (parsed == 2) {
-      printf("2");
       package.count = m;
       package.gender = 0;
       send(clientSocket, &package, sizeof(struct Package), 0);
@@ -71,7 +79,6 @@ int main(int argc, char *argv[]) {
 
     parsed = sscanf(buffer, "m %d", &m);
     if (parsed == 1) {
-      printf("3");
       package.count = m;
       package.gender = 0;
       send(clientSocket, &package, sizeof(struct Package), 0);
@@ -80,7 +87,6 @@ int main(int argc, char *argv[]) {
 
     parsed = sscanf(buffer, "w %d", &w);
     if (parsed == 1) {
-      printf("4");
       package.count = w;
       package.gender = 1;
       send(clientSocket, &package, sizeof(package), 0);

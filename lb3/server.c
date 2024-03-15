@@ -41,9 +41,16 @@ struct Package {
   int count;
 };
 
+void sendResponse(char *message, size_t size) {
+  for (int i = 0; i < clientsCount; i++) {
+    send(clients[i], message, size, 0);
+  }
+}
+
 void *program(void *arg) {
   struct Student *student = (struct Student *)arg;
   char *gender = student->gender == 0 ? "Мужской" : "Женский";
+  char buffer[256] = {0};
 
   int *conscience;
   pthread_mutex_t *toLock;
@@ -83,6 +90,10 @@ void *program(void *arg) {
       printf("Студент %d {%s} вошёл в ванную комнату на %d секунд\n\n",
              student->id, gender, washingTime);
 
+      sprintf(buffer, "Студент %d {%s} вошёл в ванную комнату на %d секунд\n\n",
+              student->id, gender, washingTime);
+      sendResponse(buffer, sizeof(buffer));
+
       sleep(washingTime);
 
       count++;
@@ -90,6 +101,9 @@ void *program(void *arg) {
 
       printf("Студент %d {%s} вышел из ванной комнаты\n\n", student->id,
              gender);
+      sprintf(buffer, "Студент %d {%s} вышел из ванной комнаты\n\n",
+              student->id, gender);
+      sendResponse(buffer, sizeof(buffer));
 
       sem_post(&cabins);
 
@@ -98,42 +112,44 @@ void *program(void *arg) {
       pthread_mutex_unlock(toLock);
     }
   }
-  send(student->socket, "Студент закончил мыться\n", 46, 0);
+  printf("Студент {%d} закончил мыться\n", student->id);
+  sprintf(buffer, "Студент {%d} закончил мыться\n", student->id);
+  sendResponse(buffer, sizeof(buffer));
 }
 
-void procedure() {
+pthread_t newClients, receiveThread;
+pthread_mutex_t newClientsMutex = PTHREAD_MUTEX_INITIALIZER;
+
+void *receiveMessage(void *arg) {
+  int clientSocket = *(int *)arg;
+  printf("%d", clientSocket);
+  struct Package package;
+
   while (1) {
-    struct Package *package = malloc(sizeof(struct Package));
+    int recvResult = recv(clientSocket, &package, sizeof(package), 0);
 
-    for (int i = 0; i < clientsCount; i++) {
-      int receiveResult = recv(clients[i], package, sizeof(struct Package), 0);
+    if (recvResult == -1) {
+      printf("Error receiving message\n");
+      continue;
+    }
 
-      if (receiveResult == -1) {
-        printf("ERROR OCCURED");
-        return;
-      }
+    // printf("Received message: %d %d\n", package.count, package.gender);
 
-      for (int i = 0; i < package->count; i++) {
-        struct Student *student = malloc(sizeof(struct Student));
-        student->id = i;
-        student->gender = package->gender;
-        student->socket = clients[i];
-
-        pthread_create(&student->thread, NULL, program, student);
-      }
+    for (int i = 0; i < package.count; i++) {
+      struct Student *student = malloc(sizeof(struct Student));
+      student->id = i;
+      student->gender = package.gender;
+      pthread_create(&student->thread, NULL, program, student);
     }
   }
 }
-
-pthread_t newClients;
-pthread_mutex_t newClientsMutex = PTHREAD_MUTEX_INITIALIZER;
 
 void *commingClients() {
   while (1) {
     int clientSocket = accept(serverSocket, NULL, NULL);
     if (clientSocket == -1) {
       printf("Error accepting new client\n");
-      return 0;
+      continue;
     }
 
     printf("Подключился клиент с Id = %d\n", clientSocket);
@@ -141,6 +157,7 @@ void *commingClients() {
     clients[clientsCount] = clientSocket;
     clientsCount++;
     pthread_mutex_unlock(&newClientsMutex);
+    pthread_create(&receiveThread, NULL, receiveMessage, &clientSocket);
   }
 }
 
@@ -153,16 +170,16 @@ int main() {
 
   serverSocket = socket(AF_INET, SOCK_STREAM, 0);
 
-  for_addr.sin_addr.s_addr = inet_addr("192.168.1.71");
+  for_addr.sin_addr.s_addr = inet_addr("192.168.26.239");
   for_addr.sin_family = AF_INET;
-  for_addr.sin_port = htons(5556);
+  for_addr.sin_port = htons(5558);
 
   bind(serverSocket, (struct sockaddr *)&for_addr, sizeof(for_addr));
   listen(serverSocket, 5);
   pthread_create(&newClients, NULL, commingClients, NULL);
 
-  procedure();
-
+  char keyboard[256];
+  fgets(keyboard, sizeof(keyboard), stdin);
   close(serverSocket);
 
   pthread_exit(0);
